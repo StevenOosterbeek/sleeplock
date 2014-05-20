@@ -13,7 +13,8 @@
 
 /////////////////////*/
 
-int personWeight = 100;
+int personWeight;
+boolean isCalibrating = true;
 boolean personOnBed = false;
 boolean doorMayClose = true;
 boolean doorShouldBeClosing = false;
@@ -21,6 +22,7 @@ boolean doorIsClosed = false;
 
 //
 // LEDS
+const int ledYellow = 3; // Calibration indicator
 const int ledBlue = 4; // On when the door may be closed
 const int ledRed = 5; // On when door is closed, off when door is open
 
@@ -49,12 +51,9 @@ const int buttonPin = 34;
 void setup() {
 
     // Leds pins
+    pinMode(ledYellow, OUTPUT);
     pinMode(ledBlue, OUTPUT);
     pinMode(ledRed, OUTPUT);
-
-    // Default: door is open and may be closed
-    digitalWrite(ledBlue, HIGH);
-    digitalWrite(ledRed, LOW);
 
     // Step motor pins
     pinMode(motorPinOne, OUTPUT);
@@ -65,6 +64,8 @@ void setup() {
     // Button pins
     pinMode(buttonPin, INPUT);
 
+    Serial.begin(9600);
+
 }
 
 void loop() {
@@ -72,50 +73,105 @@ void loop() {
     fsrLeftValue = analogRead(fsrPinTwo);
     fsrRightValue = analogRead(fsrPinOne);
 
-    // Check if weight is more than the calibrated weight
-    if ((fsrRightValue - 50) >= personWeight && (fsrLeftValue - 50) >= personWeight) personOnBed = true;
+    // Sensor debugging:
+    // Serial.println("----------------------------- ");
+    // Serial.print("Sensor right: ");
+    // Serial.println(fsrRightValue);
+    // Serial.print("Sensor left: ");
+    // Serial.println(fsrLeftValue);
+    // delay(1000);
 
-    // Close door?
-    if (personOnBed) {
+    if (isCalibrating) {
 
-        stepCounter++;
-        doorShouldBeClosing = (stepCounter <= motorSteps);
+        // Someone has layed down on the bed for calibration
+        if (fsrLeftValue > 20 && fsrRightValue > 20) {
 
-        if (doorShouldBeClosing && doorMayClose && !doorIsClosed) {
+            digitalWrite(ledYellow, HIGH);
+            delay(5000);
 
-            for (int i = 7; i >= 0; i--) {
-                stepMotorOutput(i);
-                delayMicroseconds(motorSpeed);
-            }
+            // Measure sensors again and only set weight when person did not get out of bed
+            int secondFsrLeftValue = analogRead(fsrPinTwo);
+            int secondFsrRightValue = analogRead(fsrPinOne);
 
-            if (stepCounter == motorSteps) {
-                // Door is now closed
-                doorIsClosed = true;
-                doorMayClose = false;
+            if (secondFsrLeftValue > 20 && secondFsrRightValue > 20) {
+
+                // Always set lowest measured weight
+                if (secondFsrLeftValue < secondFsrRightValue) personWeight = secondFsrLeftValue;
+                else if (secondFsrLeftValue > secondFsrRightValue) personWeight = secondFsrRightValue;
+                else personWeight = secondFsrLeftValue;
+
+                digitalWrite(ledYellow, LOW);
+                digitalWrite(ledBlue, HIGH);
+                isCalibrating = false;
+
             }
 
         } else {
 
-            // Keep checking if the person has gone out of bed
-            if (fsrRightValue < personWeight && fsrLeftValue < personWeight) {
-                personOnBed = false;
-                doorMayClose = true;
-                stepCounter = 0; // Reset step motor
+            digitalWrite(ledBlue, LOW);
+            digitalWrite(ledRed, LOW);
+
+            digitalWrite(ledYellow, LOW);
+            delay(350);
+            digitalWrite(ledYellow, HIGH);
+            delay(350);
+
+        }
+
+    } else {
+
+        // Check if weight is more than the calibrated weight
+        if ((fsrLeftValue - 50) >= personWeight && (fsrRightValue - 50) >= personWeight) personOnBed = true;
+
+        // Close door?
+        if (personOnBed) {
+
+            stepCounter++;
+            doorShouldBeClosing = (stepCounter <= motorSteps);
+
+            if (doorShouldBeClosing && doorMayClose && !doorIsClosed) {
+
+                for (int i = 7; i >= 0; i--) {
+                    stepMotorOutput(i);
+                    delayMicroseconds(motorSpeed);
+                }
+
+                // Door is now closed
+                if (stepCounter == motorSteps) {
+                    doorIsClosed = true;
+                    doorMayClose = false;
+                }
+
+            } else {
+
+                // Keep checking if the person has gone out of bed
+                if (fsrLeftValue < personWeight && fsrRightValue < personWeight) {
+                    personOnBed = false;
+                    doorMayClose = true;
+                    stepCounter = 0; // Reset step motor
+                }
+
             }
 
         }
 
+        // Clicking the button will unlock the door, keeping the button pressed will restart the calibration
+        if (digitalRead(buttonPin) == HIGH) {
+
+            doorIsClosed = false;
+            digitalWrite(ledRed, LOW);
+
+            delay(1500); // Keep button pressed for 1,5 seconds for restarting calibration
+            if (digitalRead(buttonPin) == HIGH) isCalibrating = true;
+
+        }
+
+        // LED logic
+        if (doorIsClosed) digitalWrite(ledRed, HIGH);
+        if (doorMayClose) digitalWrite(ledBlue, HIGH);
+        else digitalWrite(ledBlue, LOW);
+
     }
-
-    // Door has been unlocked manually when the button is pressed
-    if (digitalRead(buttonPin) == HIGH) doorIsClosed = false;
-
-    // LED logic
-    if (doorIsClosed) digitalWrite(ledRed, HIGH);
-    else digitalWrite(ledRed, LOW);
-
-    if (doorMayClose) digitalWrite(ledBlue, HIGH);
-    else digitalWrite(ledBlue, LOW);
 
 }
 
