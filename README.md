@@ -7,5 +7,18 @@ I am currently developing a prototype with Arduino for testing and proving this 
 - Arduino Mega 2560
 - Step motor, 28BYJ-48
 - Force sensitive resistor (2)
-- LED (2)
+- LED (3)
 - Button
+
+====
+
+#### Testing & Debugging
+Setting the following boolean to true will start the test mode, which means the serial monitor will output the necessary information for testing and debugging.
+```js
+boolean testMode = false;
+```
+
+Setting the following boolean to true will start the sensor debugging, which means the serial monitor will keep on outputting the measurements of the FSRs.
+```js
+boolean sensorDebugging = false;
+```

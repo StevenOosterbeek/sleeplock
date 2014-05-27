@@ -1,6 +1,6 @@
 /*/////////////////////
 
-    Sleeplock - v.0.0.1
+    Sleeplock - v.0.0.2
     Steven Oosterbeek
     Rotterdam University of Applied Sciences
 
@@ -12,6 +12,9 @@
     Arduino Mega 2560, Step motor 28BYJ-48, Force sensitive resistor (2), LED (2), button
 
 /////////////////////*/
+
+boolean testMode = false; // Set to true for testing purposes
+boolean sensorDebugging = false; // Set to true for outputting FSR values in monitor
 
 int personWeight;
 boolean isCalibrating = true;
@@ -64,7 +67,7 @@ void setup() {
     // Button pins
     pinMode(buttonPin, INPUT);
 
-    Serial.begin(9600);
+    if (testMode || sensorDebugging) Serial.begin(9600);
 
 }
 
@@ -73,13 +76,16 @@ void loop() {
     fsrLeftValue = analogRead(fsrPinTwo);
     fsrRightValue = analogRead(fsrPinOne);
 
-    // Sensor debugging:
-    // Serial.println("----------------------------- ");
-    // Serial.print("Sensor right: ");
-    // Serial.println(fsrRightValue);
-    // Serial.print("Sensor left: ");
-    // Serial.println(fsrLeftValue);
-    // delay(1000);
+    if (sensorDebugging) {
+        Serial.println("--------- FSR VALUES ---------");
+        Serial.print("Sensor right: ");
+        Serial.println(fsrRightValue);
+        Serial.print("Sensor left: ");
+        Serial.println(fsrLeftValue);
+        Serial.println("------- END FSR VALUES -------");
+        Serial.println("");
+        delay(1000);
+    }
 
     if (isCalibrating) {
 
@@ -104,9 +110,16 @@ void loop() {
                 digitalWrite(ledBlue, HIGH);
                 isCalibrating = false;
 
+                if (testMode) {
+                    Serial.print("Sleeplock has been calibrated > ");
+                    Serial.print(personWeight);
+                }
+
             }
 
         } else {
+
+            if (testMode) Serial.println("Sleeplock is waiting for calibration..");
 
             digitalWrite(ledBlue, LOW);
             digitalWrite(ledRed, LOW);
@@ -140,6 +153,7 @@ void loop() {
                 if (stepCounter == motorSteps) {
                     doorIsClosed = true;
                     doorMayClose = false;
+                    if (testMode) Serial.println("The door has been closed.");
                 }
 
             } else {
@@ -149,6 +163,7 @@ void loop() {
                     personOnBed = false;
                     doorMayClose = true;
                     stepCounter = 0; // Reset step motor
+                    if (testMode) Serial.println("The person has left the bed, the door may be closed once again.");
                 }
 
             }
@@ -163,6 +178,7 @@ void loop() {
 
             delay(1500); // Keep button pressed for 1,5 seconds for restarting calibration
             if (digitalRead(buttonPin) == HIGH) isCalibrating = true;
+            else if (testMode) Serial.println("Someone has unlocked the door manualy.");
 
         }
 
