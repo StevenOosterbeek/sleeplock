@@ -17,6 +17,7 @@ boolean testMode = false; // Set to true for testing purposes
 boolean sensorDebugging = false; // Set to true for outputting FSR values in monitor
 
 int personWeight;
+const int personMargin = 75;
 boolean isCalibrating = true;
 boolean personOnBed = false;
 boolean doorMayClose = true;
@@ -44,8 +45,8 @@ const int pinLookup[8] = { B01000, B01100, B00100, B00110, B00010, B00011, B0000
 // Force sensitive resistors (analog in)
 const int fsrPinOne = 0;
 const int fsrPinTwo = 1;
-int fsrLeftValue;
-int fsrRightValue;
+int fsrOneValue;
+int fsrTwoValue;
 
 //
 // Button
@@ -73,119 +74,133 @@ void setup() {
 
 void loop() {
 
-    fsrLeftValue = analogRead(fsrPinTwo);
-    fsrRightValue = analogRead(fsrPinOne);
+    fsrOneValue = analogRead(fsrPinTwo);
+    fsrTwoValue = analogRead(fsrPinOne);
 
     if (sensorDebugging) {
+
         Serial.println("--------- FSR VALUES ---------");
-        Serial.print("Sensor right: ");
-        Serial.println(fsrRightValue);
-        Serial.print("Sensor left: ");
-        Serial.println(fsrLeftValue);
+        Serial.print("Sensor one: ");
+        Serial.println(fsrOneValue);
+        Serial.print("Sensor two: ");
+        Serial.println(fsrTwoValue);
         Serial.println("------- END FSR VALUES -------");
         Serial.println("");
         delay(1000);
-    }
 
-    if (isCalibrating) {
+    } else {
 
-        // Someone has layed down on the bed for calibration
-        if (fsrLeftValue > 20 && fsrRightValue > 20) {
+        if (isCalibrating) {
 
-            digitalWrite(ledYellow, HIGH);
-            delay(5000);
+            // Someone has layed down on the bed for calibration
+            if (fsrOneValue > personMargin && fsrTwoValue > personMargin) {
 
-            // Measure sensors again and only set weight when person did not get out of bed
-            int secondFsrLeftValue = analogRead(fsrPinTwo);
-            int secondFsrRightValue = analogRead(fsrPinOne);
+                digitalWrite(ledYellow, HIGH);
+                delay(3000);
 
-            if (secondFsrLeftValue > 20 && secondFsrRightValue > 20) {
+                // Measure sensors again and only set weight when person did not get out of bed
+                int secondFsrOneValue = analogRead(fsrPinOne);
+                int secondFsrTwoValue = analogRead(fsrPinTwo);
 
-                // Always set lowest measured weight
-                if (secondFsrLeftValue < secondFsrRightValue) personWeight = secondFsrLeftValue;
-                else if (secondFsrLeftValue > secondFsrRightValue) personWeight = secondFsrRightValue;
-                else personWeight = secondFsrLeftValue;
+                if (secondFsrOneValue > personMargin && secondFsrTwoValue > personMargin) {
+
+                    // Always set lowest measured weight
+                    if (secondFsrOneValue < secondFsrTwoValue) personWeight = secondFsrOneValue;
+                    else if (secondFsrOneValue > secondFsrTwoValue) personWeight = secondFsrTwoValue;
+                    else personWeight = secondFsrTwoValue;
+
+                    digitalWrite(ledYellow, LOW);
+                    digitalWrite(ledBlue, HIGH);
+                    isCalibrating = false;
+
+                    if (testMode) {
+                        Serial.print("Sleeplock has been calibrated > ");
+                        Serial.print(personWeight);
+                    }
+
+                }
+
+            } else {
+
+                if (testMode) Serial.println("Sleeplock is waiting for calibration..");
+
+                digitalWrite(ledBlue, LOW);
+                digitalWrite(ledRed, LOW);
 
                 digitalWrite(ledYellow, LOW);
-                digitalWrite(ledBlue, HIGH);
-                isCalibrating = false;
-
-                if (testMode) {
-                    Serial.print("Sleeplock has been calibrated > ");
-                    Serial.print(personWeight);
-                }
+                delay(350);
+                digitalWrite(ledYellow, HIGH);
+                delay(350);
 
             }
 
         } else {
 
-            if (testMode) Serial.println("Sleeplock is waiting for calibration..");
+            // Check if weight is more than the calibrated weight
+            if ((fsrOneValue - personMargin) >= personWeight || (fsrTwoValue - personMargin) >= personWeight) personOnBed = true;
 
-            digitalWrite(ledBlue, LOW);
-            digitalWrite(ledRed, LOW);
+            // Close door?
+            if (personOnBed) {
 
-            digitalWrite(ledYellow, LOW);
-            delay(350);
-            digitalWrite(ledYellow, HIGH);
-            delay(350);
+                stepCounter++;
+                doorShouldBeClosing = (stepCounter <= motorSteps);
 
-        }
+                if (doorShouldBeClosing && doorMayClose && !doorIsClosed) {
 
-    } else {
+                    for (int i = 7; i >= 0; i--) {
+                        stepMotorOutput(i);
+                        delayMicroseconds(motorSpeed);
+                    }
 
-        // Check if weight is more than the calibrated weight
-        if ((fsrLeftValue - 50) >= personWeight && (fsrRightValue - 50) >= personWeight) personOnBed = true;
+                    // Door is now closed
+                    if (stepCounter == motorSteps) {
+                        doorIsClosed = true;
+                        doorMayClose = false;
+                        if (testMode) Serial.println("The door has been closed.");
+                    }
 
-        // Close door?
-        if (personOnBed) {
+                } else {
 
-            stepCounter++;
-            doorShouldBeClosing = (stepCounter <= motorSteps);
+                    // Keep checking if the person has gone out of bed
+                    if (fsrOneValue < (personWeight + personMargin) && fsrTwoValue < (personWeight + personMargin)) {
 
-            if (doorShouldBeClosing && doorMayClose && !doorIsClosed) {
+                        delay(3000);
 
-                for (int i = 7; i >= 0; i--) {
-                    stepMotorOutput(i);
-                    delayMicroseconds(motorSpeed);
-                }
+                        // Measure sensors again after three seconds for making sure the person left the bed, instead of turning in bed
+                        int thirdFsrOneValue = analogRead(fsrPinOne);
+                        int thirdFsrTwoValue = analogRead(fsrPinTwo);
 
-                // Door is now closed
-                if (stepCounter == motorSteps) {
-                    doorIsClosed = true;
-                    doorMayClose = false;
-                    if (testMode) Serial.println("The door has been closed.");
-                }
+                        if (thirdFsrOneValue < (personWeight + personMargin) && thirdFsrTwoValue < (personWeight + personMargin)) {
+                            personOnBed = false;
+                            doorMayClose = true;
+                            stepCounter = 0; // Reset step motor
+                            if (testMode) Serial.println("The person has left the bed, the door may be closed once again.");
+                        }
 
-            } else {
+                    }
 
-                // Keep checking if the person has gone out of bed
-                if (fsrLeftValue < personWeight && fsrRightValue < personWeight) {
-                    personOnBed = false;
-                    doorMayClose = true;
-                    stepCounter = 0; // Reset step motor
-                    if (testMode) Serial.println("The person has left the bed, the door may be closed once again.");
                 }
 
             }
 
+            // Clicking the button will unlock the door, keeping the button pressed will restart the calibration
+            if (digitalRead(buttonPin) == HIGH) {
+
+                doorIsClosed = false;
+                digitalWrite(ledRed, LOW);
+
+                delay(1500); // Keep button pressed for 1,5 seconds for restarting calibration
+                if (digitalRead(buttonPin) == HIGH) isCalibrating = true;
+                else if (testMode) Serial.println("Someone has unlocked the door manualy.");
+
+            }
+
+            // LED logic
+            if (doorIsClosed) digitalWrite(ledRed, HIGH);
+            if (doorMayClose) digitalWrite(ledBlue, HIGH);
+            else digitalWrite(ledBlue, LOW);
+
         }
-
-        // Clicking the button will unlock the door, keeping the button pressed will restart the calibration
-        if (digitalRead(buttonPin) == HIGH) {
-
-            doorIsClosed = false;
-            digitalWrite(ledRed, LOW);
-
-            delay(1500); // Keep button pressed for 1,5 seconds for restarting calibration
-            if (digitalRead(buttonPin) == HIGH) isCalibrating = true;
-            else if (testMode) Serial.println("Someone has unlocked the door manualy.");
-
-        }
-
-        // LED logic
-        if (doorIsClosed) digitalWrite(ledRed, HIGH);
-        if (doorMayClose) digitalWrite(ledBlue, HIGH);
-        else digitalWrite(ledBlue, LOW);
 
     }
 
